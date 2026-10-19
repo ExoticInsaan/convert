@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PDF to A4 Converter</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:520px;margin:60px auto;padding:0 16px}
+  .drop{border:2px dashed #888;border-radius:12px;padding:40px;text-align:center;cursor:pointer}
+  .drop.over{background:#eef}
+  select,button{font-size:16px;padding:8px 12px;margin-top:14px}
+  #log{margin-top:16px;font-size:14px;white-space:pre-line}
+</style>
+</head>
+<body>
+<h2>PDF → A4</h2>
+<div class="drop" id="drop">Drop PDFs here or click to choose
+  <input type="file" id="file" accept="application/pdf" multiple hidden>
+</div>
+<label>Orientation:
+  <select id="mode">
+    <option value="auto">Auto (keep portrait/landscape per page)</option>
+    <option value="portrait">Force portrait</option>
+    <option value="landscape">Force landscape</option>
+  </select>
+</label>
+<div id="log"></div>
+
+<script>
+const { PDFDocument } = PDFLib;
+const A4 = [595.28, 841.89]; // points
+const drop = document.getElementById('drop');
+const input = document.getElementById('file');
+const log = document.getElementById('log');
+
+drop.onclick = () => input.click();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); handle(e.dataTransfer.files); };
+input.onchange = () => handle(input.files);
+
+async function handle(files) {
+  const mode = document.getElementById('mode').value;
+  log.textContent = '';
+  for (const f of files) {
+    try {
+      log.textContent += `Converting ${f.name}...\n`;
+      const out = await toA4(await f.arrayBuffer(), mode);
+      download(out, f.name.replace(/\.pdf$/i, '') + '-A4.pdf');
+      log.textContent += `✔ Done: ${f.name}\n`;
+    } catch (err) {
+      log.textContent += `✖ Failed: ${f.name} (${err.message})\n`;
+    }
+  }
+}
+
+async function toA4(bytes, mode) {
+  const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  const out = await PDFDocument.create();
+  const pages = await out.embedPdf(src, src.getPageIndices());
+  for (const p of pages) {
+    const landscape = mode === 'landscape' || (mode === 'auto' && p.width > p.height);
+    const [W, H] = landscape ? [A4[1], A4[0]] : A4;
+    const s = Math.min(W / p.width, H / p.height);   // scale to fit
+    const w = p.width * s, h = p.height * s;
+    const page = out.addPage([W, H]);
+    page.drawPage(p, { x: (W - w) / 2, y: (H - h) / 2, width: w, height: h });
+  }
+  return out.save();
+}
+
+function download(bytes, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+</script>
+</body>
+</html>
